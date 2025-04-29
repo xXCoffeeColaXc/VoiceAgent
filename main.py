@@ -9,7 +9,7 @@ from livekit.plugins import (
 )
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
-from tools.arxiv_tools import search_arxiv
+from tools.arxiv_tools import search_arxiv, download_arxiv_pdf
 
 
 class Assistant(Agent):
@@ -19,7 +19,7 @@ class Assistant(Agent):
             instructions=(
                 "You are a concise voice assistant. "
                 "When the user asks for research papers, respond with exactly the paper titles, one per line."),
-            tools=[search_arxiv],
+            tools=[search_arxiv, download_arxiv_pdf],
         )  # ← register the tool
 
 

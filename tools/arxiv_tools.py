@@ -1,8 +1,11 @@
-# tools/arxiv_tools.py
 import aiohttp, feedparser, urllib.parse
 from livekit.agents import function_tool, RunContext
-from typing import Optional, List
+from typing import Optional, List, Dict
 import re
+import arxiv
+import asyncio
+import os
+import tempfile
 
 ARXIV_API = "http://export.arxiv.org/api/query"
 
@@ -57,3 +60,38 @@ async def search_arxiv(
             "pdf_url": pdf,
         })
     return out
+
+
+@function_tool(
+    name="download_arxiv_pdf",
+    description=("Download an arXiv paper PDF. "
+                 "Provide either `arxiv_id` (e.g. '2404.12345v3') or `pdf_url`. "
+                 "Returns the local file path."),
+)
+async def download_arxiv_pdf(
+    context: RunContext,
+    arxiv_id: Optional[str] = None,
+    pdf_url: Optional[str] = None,
+) -> Dict[str, str]:
+    # 1. Resolve PDF URL if only arxiv_id was provided
+    if arxiv_id and not pdf_url:
+        client = arxiv.Client()  # instantiate the arXiv client
+        search = arxiv.Search(id_list=[arxiv_id])
+        paper = next(client.results(search))
+        # offload the blocking download to a thread to keep the event loop free
+        pdf_path = await asyncio.to_thread(paper.download_pdf)  # auto-saves to temp file
+    else:
+        pdf_path = await asyncio.to_thread(
+            lambda: arxiv.Client()._download(pdf_url)  # placeholder if downloading via URL
+        )
+
+    # 2. Move to our own temp directory for consistency
+    tmp_dir = tempfile.gettempdir()  # use host temp dir
+    file_name = os.path.basename(pdf_path)
+    local_path = os.path.join(tmp_dir, file_name)
+
+    # 3. Copy into final location (binary-safe)
+    with open(pdf_path, "rb") as src, open(local_path, "wb") as dst:
+        dst.write(src.read())  # write in binary mode
+
+    return {"file_path": local_path}

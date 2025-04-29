@@ -1,0 +1,31 @@
+<mxfile host="65bd71144e">
+    <diagram id="6OnjYjoKA-bilx30AsjJ" name="Page-1">
+        <mxGraphModel dx="1092" dy="1139" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="6" value="LiveKit&#xa;Agents" style="rounded=1;fillColor=#dae8fc" vertex="1" parent="1">
+                    <mxGeometry x="210" y="60" width="140" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="7" value="VoiceAgent&#xa;STT → LLM → TTS" style="rounded=1;fillColor=#e1d5e7" vertex="1" parent="1">
+                    <mxGeometry x="190" y="190" width="180" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="8" value="Tools&#xa;• search_arxiv&#xa;• download_arxiv_pdf&#xa;• query_document" style="rounded=1;fillColor=#fff2cc" vertex="1" parent="1">
+                    <mxGeometry x="170" y="350" width="220" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="9" value="RAG&#xa;Chunks → Embed → DB → Retrieve" style="rounded=1;fillColor=#d5e8d4" vertex="1" parent="1">
+                    <mxGeometry x="180" y="520" width="200" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="10" style="edgeStyle=orthogonalEdgeStyle;rounded=0;" edge="1" parent="1" source="6" target="7">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="11" style="edgeStyle=orthogonalEdgeStyle;rounded=0;" edge="1" parent="1" source="7" target="8">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="12" style="edgeStyle=orthogonalEdgeStyle;rounded=0;" edge="1" parent="1" source="8" target="9">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>
