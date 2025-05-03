@@ -10,88 +10,96 @@ import tempfile
 ARXIV_API = "http://export.arxiv.org/api/query"
 
 
-def preprocess_text(text: str):
-    # Remove inline asterisks and their content
+def _clean_markdown(text: str) -> str:
+    # strip *…* and any leading symbols
     text = re.sub(r"\*[^\*]*\*", "", text)
-    # Remove leftover lone asterisks
     text = re.sub(r"\*+", "", text)
-    # remove non-alphanumeric symbols at the beginning of lines
+    text = re.sub(r"http[s]?://\S+", "", text)
     text = re.sub(r"^\W+", "", text, flags=re.MULTILINE)
-
-    return text
+    return text.strip()
 
 
 @function_tool(
     name="search_arxiv",
-    description=("Search arXiv and return up to N results with title, authors, "
-                 "summary, published date, PDF link, and arXiv ID."
-                 ""
-                 "Use when the user asks for research papers."),
+    description=("Search arXiv by keyword and return up to N results. "
+                 "By default returns only `id` and `title` for each paper. "
+                 "Set `titles_only=false` to include authors, summary, published date, and pdf_url."),
 )
 async def search_arxiv(
     context: RunContext,
     query: str,
-    max_results: Optional[int] = None,  # <- optional, *no default in schema*
+    max_results: Optional[int] = None,
     sort_by: Optional[str] = None,
     sort_order: Optional[str] = None,
-) -> List[dict]:
-    # ---- fallback values implemented here, *after* the schema check ----
+    titles_only: Optional[bool] = None,
+) -> List[Dict]:
+    # apply defaults
     max_results = max_results or 3
     sort_by = sort_by or "submittedDate"
     sort_order = sort_order or "descending"
+    titles_only = True if titles_only is None else titles_only
 
-    url = (f"{ARXIV_API}?search_query={urllib.parse.quote_plus(query)}"
-           f"&max_results={max_results}&sortBy={sort_by}&sortOrder={sort_order}")
+    url = (f"{ARXIV_API}"
+           f"?search_query={urllib.parse.quote_plus(query)}"
+           f"&max_results={max_results}"
+           f"&sortBy={sort_by}&sortOrder={sort_order}")
 
+    print(f"Fetching arXiv search results from: {url}")
     async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=20)) as sess:
         async with sess.get(url) as resp:
             xml = await resp.text()
 
     feed = feedparser.parse(xml)
-    out = []
+    results = []
     for i, entry in enumerate(feed.entries, start=1):
-        pdf = next((l.href for l in entry.links if l.type == "application/pdf"), None)
-        out.append({
-            "id": entry.id.split("/abs/")[-1],
-            "title": f"{i}. {preprocess_text(entry.title)}",
-            "authors": [a.name for a in getattr(entry, "authors", [])],
-            "summary": preprocess_text(entry.summary),
-            "published": entry.published,
-            "pdf_url": pdf,
-        })
-    return out
+        paper_id = entry.id.split("/abs/")[-1]
+        print(f"Found paper: {paper_id}")
+        title = f"{i}. {_clean_markdown(entry.title)}"
+        if titles_only:
+            results.append({"id": paper_id, "title": title})
+        else:
+            pdf_url = next((l.href for l in entry.links if l.type == "application/pdf"), None)
+            results.append({
+                "id": paper_id,
+                "title": title,
+                "authors": [a.name for a in getattr(entry, "authors", [])],
+                "summary": _clean_markdown(entry.summary),
+                "published": entry.published,
+                "pdf_url": pdf_url,
+            })
+    return results
 
 
 @function_tool(
     name="download_arxiv_pdf",
-    description=("Download an arXiv paper PDF. "
-                 "Provide either `arxiv_id` (e.g. '2404.12345v3') or `pdf_url`. "
-                 "Returns the local file path."),
+    description=("Download the PDF of an arXiv paper given its `arxiv_id` or direct `pdf_url`. "
+                 "Returns the local file path. Does not ingest into vector store."),
 )
 async def download_arxiv_pdf(
     context: RunContext,
     arxiv_id: Optional[str] = None,
     pdf_url: Optional[str] = None,
 ) -> Dict[str, str]:
-    # 1. Resolve PDF URL if only arxiv_id was provided
+    # 1) Resolve PDF URL from arxiv_id if needed
     if arxiv_id and not pdf_url:
-        client = arxiv.Client()  # instantiate the arXiv client
+        client = arxiv.Client()
         search = arxiv.Search(id_list=[arxiv_id])
         paper = next(client.results(search))
-        # offload the blocking download to a thread to keep the event loop free
-        pdf_path = await asyncio.to_thread(paper.download_pdf)  # auto-saves to temp file
-    else:
+        # download in background thread
+        pdf_path = await asyncio.to_thread(paper.download_pdf)
+    elif pdf_url:
         pdf_path = await asyncio.to_thread(
-            lambda: arxiv.Client()._download(pdf_url)  # placeholder if downloading via URL
+            lambda: arxiv.Client()._download(pdf_url)  # you can replace this with aiohttp logic
         )
+    else:
+        raise ValueError("Must provide arxiv_id or pdf_url")
 
-    # 2. Move to our own temp directory for consistency
-    tmp_dir = tempfile.gettempdir()  # use host temp dir
+    # 2) Copy to a stable temp file
+    tmp_dir = tempfile.gettempdir()
     file_name = os.path.basename(pdf_path)
     local_path = os.path.join(tmp_dir, file_name)
-
-    # 3. Copy into final location (binary-safe)
-    with open(pdf_path, "rb") as src, open(local_path, "wb") as dst:
-        dst.write(src.read())  # write in binary mode
+    with open(pdf_path,    "rb") as src, \
+         open(local_path, "wb") as dst:
+        dst.write(src.read())
 
     return {"file_path": local_path}
