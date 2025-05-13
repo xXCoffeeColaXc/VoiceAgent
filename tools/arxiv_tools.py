@@ -80,26 +80,32 @@ async def download_arxiv_pdf(
     arxiv_id: Optional[str] = None,
     pdf_url: Optional[str] = None,
 ) -> Dict[str, str]:
-    # 1) Resolve PDF URL from arxiv_id if needed
+    # 1) If we're given an arXiv ID, use the arxiv Client
     if arxiv_id and not pdf_url:
         client = arxiv.Client()
         search = arxiv.Search(id_list=[arxiv_id])
         paper = next(client.results(search))
         # download in background thread
         pdf_path = await asyncio.to_thread(paper.download_pdf)
+
+    # 2) Otherwise, if they've supplied a direct PDF URL, fetch with aiohttp
     elif pdf_url:
-        pdf_path = await asyncio.to_thread(
-            lambda: arxiv.Client()._download(pdf_url)  # you can replace this with aiohttp logic
-        )
+        # derive a safe filename
+        parsed = urllib.parse.urlparse(pdf_url)
+        file_name = os.path.basename(parsed.path) or f"{arxiv_id or 'paper'}.pdf"
+        tmp_dir = tempfile.gettempdir()
+        local_path = os.path.join(tmp_dir, file_name)
+
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as sess:
+            async with sess.get(pdf_url) as resp:
+                resp.raise_for_status()
+                # write in binary chunks
+                with open(local_path, "wb") as f:
+                    async for chunk in resp.content.iter_chunked(65536):
+                        f.write(chunk)
+        pdf_path = local_path
+
     else:
-        raise ValueError("Must provide arxiv_id or pdf_url")
+        raise ValueError("Must provide either `arxiv_id` or `pdf_url`")
 
-    # 2) Copy to a stable temp file
-    tmp_dir = tempfile.gettempdir()
-    file_name = os.path.basename(pdf_path)
-    local_path = os.path.join(tmp_dir, file_name)
-    with open(pdf_path,    "rb") as src, \
-         open(local_path, "wb") as dst:
-        dst.write(src.read())
-
-    return {"file_path": local_path}
+    return {"file_path": pdf_path}
